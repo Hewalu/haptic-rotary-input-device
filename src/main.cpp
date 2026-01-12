@@ -23,8 +23,8 @@ float startAngle = 0;                // Start-Winkel offset
 
 // --- Step Konfiguration ---
 bool stepMode = true;
-float stepAngle = 0.52;            // ~30 Grad (PI / 6)
-const float STEP_STIFFNESS = 15.0; // Rasterung Härte
+float stepAngle = 0.52;           // ~30 Grad (PI / 6)
+const float STEP_STIFFNESS = 8.0; // Rasterung Härte
 
 void setup()
 {
