@@ -21,6 +21,11 @@ const float WALL_STIFFNESS = 30;     // Stärke der "Wand" (Federkraft)
 const float WALL_MIN_VELOCITY = 2.0; // Mindestgeschwindigkeit für Rückstellung
 float startAngle = 0;                // Start-Winkel offset
 
+// --- Step Konfiguration ---
+bool stepMode = true;
+float stepAngle = 0.52;            // ~30 Grad (PI / 6)
+const float STEP_STIFFNESS = 15.0; // Rasterung Härte
+
 void setup()
 {
   Serial.begin(115200);
@@ -200,6 +205,43 @@ void loop()
         velocity = WALL_MIN_VELOCITY;
 
       targetVelocity = velocity;
+    }
+
+    // --- 3. Step Logic (Nur wenn NICHT an der Wand) ---
+    if (!motorActive && stepMode)
+    {
+      static bool inScrollMove = false;
+      float stepTarget = round(currentAngle / stepAngle) * stepAngle;
+
+      // SICHERHEIT: Verhindere, dass ein Step genau auf oder hinter der Wand liegt (Konflikt!)
+      // Wir nehmen den letzten gültigen Step VOR der Wand.
+      float safeUpper = upperBound - 0.1; // 0.1 Rad Abstand zur Wand halten
+      float safeLower = lowerBound + 0.1;
+
+      if (stepTarget > safeUpper)
+        stepTarget = floor(safeUpper / stepAngle) * stepAngle;
+      if (stepTarget < safeLower)
+        stepTarget = ceil(safeLower / stepAngle) * stepAngle;
+
+      float diff = stepTarget - currentAngle;
+
+      // Hysterese damit der Motor nicht zittert
+      const float STEP_TRIGGER_ON = 0.05;  // Ab wann korrigieren? (~3 Grad)
+      const float STEP_TRIGGER_OFF = 0.01; // Wann fertig? (~0.5 Grad)
+
+      if (abs(diff) > STEP_TRIGGER_ON)
+        inScrollMove = true;
+      if (abs(diff) < STEP_TRIGGER_OFF)
+        inScrollMove = false;
+
+      if (inScrollMove)
+      {
+        motorActive = true;
+        currentVoltageLimit = 2.0;
+
+        // P-Regler hin zum Step (invertiert wie oben)
+        targetVelocity = -diff * STEP_STIFFNESS;
+      }
     }
   }
 
