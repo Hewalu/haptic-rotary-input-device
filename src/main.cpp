@@ -1,4 +1,18 @@
 #include <SimpleFOC.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+
+// Konfiguration muss identisch zur main.cpp sein
+const char *ssid = "Haptic Rotary Device";
+const char *password = "Password123456";
+WiFiUDP udp;
+const int localPort = 4444;
+const int TELEMETRY_INTERVAL_MS = 20; // Sende-Intervall in ms (50hz)
+
+IPAddress controllerIP;
+int controllerPort = 0;
+bool controllerConnected = false;
+const int LED_PIN = 2; // Onboard LED des ESP32
 
 // --- Hardware Konfiguration ---
 BLDCMotor motor = BLDCMotor(7);
@@ -59,7 +73,7 @@ void setup()
   motor.LPF_velocity.Tf = 0.01;
 
   // 4. FOC Initialisierung
-  Serial.println("Initialisiere FOC... (Motor zuckt kurz)");
+  Serial.println("Initialisiere FOC...");
   motor.init();
 
   // WICHTIG: Das hier führt die Kalibrierung durch
@@ -71,7 +85,22 @@ void setup()
   delay(100);
   startAngle = sensor.getAngle();
 
-  Serial.println("Setup fertig. Motor sollte drehen.");
+  // WiFi Setup
+  WiFi.softAP(ssid, password);
+  WiFi.setSleep(false); // Wichtig für Latenz
+
+  if (udp.begin(localPort))
+  {
+    Serial.printf("UDP Server gestartet auf Port %d\n", localPort);
+    Serial.print("PC bitte verbinden mit WLAN: ");
+    Serial.println(ssid);
+  }
+  else
+  {
+    Serial.println("UDP Fehler beim Starten!");
+  }
+
+  Serial.println("Setup fertig.");
 }
 
 void loop()
@@ -265,5 +294,27 @@ void loop()
   {
     Serial.printf("Ang: %.2f\t FSR: %d\n", currentAngle, fsrValue);
     letzteDruckZeit = millis();
+  }
+
+  // --- UDP Empfang & Senden ---
+  int packetSize = udp.parsePacket();
+  if (packetSize)
+  {
+    char packetBuff[255];
+    int len = udp.read(packetBuff, 255);
+    // Absender registrieren
+    controllerIP = udp.remoteIP();
+    controllerPort = udp.remotePort();
+    controllerConnected = true;
+  }
+
+  static unsigned long lastTelemetry = 0;
+  if (controllerConnected && (millis() - lastTelemetry > TELEMETRY_INTERVAL_MS))
+  {
+    lastTelemetry = millis();
+    udp.beginPacket(controllerIP, controllerPort);
+    // Sende: Winkel,Geschwindigkeit (Kommagetrennt)
+    udp.printf("%.4f,%.4f", currentAngle, sensor.getVelocity());
+    udp.endPacket();
   }
 }
