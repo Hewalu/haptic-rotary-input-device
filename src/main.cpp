@@ -37,8 +37,8 @@ float startAngle = 0;                // Start-Winkel offset
 
 // --- Step Konfiguration ---
 bool stepMode = true;
-float stepAngle = 0.52;           // ~30 Grad (PI / 6)
-const float STEP_STIFFNESS = 8.0; // Rasterung Härte
+float stepAngle = 0.52;            // ~30 Grad (PI / 6)
+const float STEP_STIFFNESS = 15.0; // Rasterung Härte
 
 void setup()
 {
@@ -47,6 +47,7 @@ void setup()
   Serial.println("--- Starte Setup ---");
 
   pinMode(FSR_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
 
   // 1. Sensor initialisieren
   sensor.init();
@@ -288,24 +289,47 @@ void loop()
     motor.disable();
   }
 
-  // 3. Debug Output (Gedrosselt)
-  static unsigned long letzteDruckZeit = 0;
-  if (millis() - letzteDruckZeit > 100)
-  {
-    Serial.printf("Ang: %.2f\t FSR: %d\n", currentAngle, fsrValue);
-    letzteDruckZeit = millis();
-  }
-
   // --- UDP Empfang & Senden ---
   int packetSize = udp.parsePacket();
   if (packetSize)
   {
     char packetBuff[255];
     int len = udp.read(packetBuff, 255);
+    if (len > 0)
+      packetBuff[len] = 0; // Null-Terminierung
+
     // Absender registrieren
     controllerIP = udp.remoteIP();
     controllerPort = udp.remotePort();
     controllerConnected = true;
+
+    // Befehls-Parsing
+    String msg = String(packetBuff);
+    Serial.println("RX: " + msg); // Debug Log
+
+    if (msg.startsWith("STEPS:"))
+    {
+      int val = msg.substring(6).toInt();
+      stepMode = (val == 1);
+      Serial.printf("Set stepMode: %d\n", stepMode);
+    }
+  }
+
+  // --- LED Status Control ---
+  if (controllerConnected)
+  {
+    digitalWrite(LED_PIN, HIGH);
+  }
+  else
+  {
+    static unsigned long ledTimer = 0;
+    static bool ledState = LOW;
+    if (millis() - ledTimer > 500)
+    {
+      ledTimer = millis();
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState);
+    }
   }
 
   static unsigned long lastTelemetry = 0;
